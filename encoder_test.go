@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -28,9 +27,7 @@ func TestEncodeForUin8(t *testing.T) {
 func TestEncodeForString(t *testing.T) {
 	enc := Enc{}
 	data := "hello"
-	h := []byte{0x68, 0x89}
-	fmt.Printf("elem type is %v\n", reflect.TypeOf(h).Elem())
-	exp := []byte{0x82, 0x68, 0x65, 0x6c, 0x6c, 0x6f}
+	exp := []byte{0x85, 0x68, 0x65, 0x6c, 0x6c, 0x6f}
 	res := enc.EncodeRLP(data)
 	fmt.Printf("res is %v\n", res)
 	assert.Equal(t, res, exp)
@@ -40,6 +37,15 @@ func TestEncodeByteSlice(t *testing.T) {
 	enc := Enc{}
 	data := []byte{0x01, 0x02, 0x03}
 	exp := []byte{0x83, 0x01, 0x02, 0x03}
+	res := enc.EncodeRLP(data)
+	fmt.Printf("res is %v\n", res)
+	assert.Equal(t, res, exp)
+}
+
+func TestReflectDT(t *testing.T) {
+	enc := Enc{}
+	data := []string{"hello", "world"}
+	exp := []byte{0xcc, 0x85, 0x68, 0x65, 0x6c, 0x6c, 0x6f, 0x85, 0x77, 0x6f, 0x72, 0x6c, 0x64}
 	res := enc.EncodeRLP(data)
 	fmt.Printf("res is %v\n", res)
 	assert.Equal(t, res, exp)
