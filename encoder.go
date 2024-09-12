@@ -39,12 +39,20 @@ func (e *Enc) EncodeRLP(data interface{}) []byte {
 
 	fmt.Printf("type is %v\n", t.Kind())
 
-	switch t.Kind() {
-	case reflect.Int:
+	kind := t.Kind()
+
+	switch {
+	case kind == reflect.Int:
 		if t.Int() < 128 {
 			return []byte{byte(t.Int())}
 		}
 		return append(encodeLength(intsize(uint64(t.Int())), 0x80), []byte{byte(t.Int())}...)
+	case kind == reflect.String:
+		return append(encodeLength(len(t.String()), 0x80), []byte(t.String())...)
+	case kind == reflect.Slice && isByte(t.Type().Elem()):
+		return append(encodeLength(len(t.Bytes()), 0x80), t.Bytes()...)
+	default:
+		fmt.Print("rlp: unsupported type")
 	}
 
 	return nil
@@ -52,4 +60,8 @@ func (e *Enc) EncodeRLP(data interface{}) []byte {
 
 func encodeLength(length int, offset byte) []byte {
 	return []byte{byte(length) + offset}
+}
+
+func isByte(t reflect.Type) bool {
+	return t.Kind() == reflect.Uint8
 }
