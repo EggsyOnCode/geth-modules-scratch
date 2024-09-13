@@ -27,6 +27,44 @@ func getSize(data interface{}) int {
 	return int(unsafe.Sizeof(v))
 }
 
+// Calculate the size of an interface{} dynamically
+func sizeOfInterface(data interface{}) uintptr {
+	value := reflect.ValueOf(data)
+	var size uintptr
+
+	switch value.Kind() {
+	case reflect.Slice:
+		// Calculate the size of each element in the slice
+		for i := 0; i < value.Len(); i++ {
+			size += sizeOfInterface(value.Index(i).Interface())
+		}
+		// Add the overhead of the slice itself (slice header)
+		size += unsafe.Sizeof(data)
+
+	case reflect.Struct:
+		// Calculate the size of each field in the struct
+		for i := 0; i < value.NumField(); i++ {
+			size += sizeOfInterface(value.Field(i).Interface())
+		}
+
+	case reflect.String:
+		// The size of a string includes the size of the string header plus the length of the string
+		size = unsafe.Sizeof("") + uintptr(len(data.(string)))
+
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
+		reflect.Float32, reflect.Float64, reflect.Bool:
+		// Use unsafe.Sizeof for primitive types
+		size = unsafe.Sizeof(data)
+
+	default:
+		// If it's an unsupported type, use its unsafe size
+		size = unsafe.Sizeof(data)
+	}
+
+	return size
+}
+
 func intsize(i uint64) (size int) {
 	for size = 1; ; size++ {
 		if i >>= 8; i == 0 {
@@ -69,26 +107,38 @@ func encodeLength(length int, offset byte) []byte {
 	return []byte{byte(length) + offset}
 }
 
+func encodeLengthForLargeStructs(length int, lenOfLen int, offset byte) []byte {
+	return []byte{byte(length) + byte(lenOfLen) + offset}
+}
+
 func encodeCustomSlice(e *Enc, data interface{}) []byte {
 	var buffer bytes.Buffer
 	slice := reflect.ValueOf(data)
 
+	// Encode each element of the slice
 	for i := 0; i < slice.Len(); i++ {
-		// Base condition: If elem is not a slice, encode it
 		elem := slice.Index(i).Interface()
-		fmt.Printf("elem is %T\n", elem)
 		if slice.Index(i).Kind() != reflect.Slice {
-			buffer.Write(e.EncodeRLP(elem)) // Append the RLP-encoded element to the buffer
+			// If element is not a slice, RLP-encode it directly
+			buffer.Write(e.EncodeRLP(elem))
 		} else {
-			// Recursively encode the slice
+			// Recursively encode if the element is a slice
 			buffer.Write(encodeCustomSlice(e, elem))
 		}
 	}
 
-	fmt.Printf("len of the data is %v\n", len(buffer.Bytes()))
+	listSize := buffer.Len()
 
-	// Encode the length of the buffer prefixed with the length of the encoded list
-	return append(encodeLength(len(buffer.Bytes()), 0xc0), buffer.Bytes()...)
+	if listSize < 56 {
+		// List length is less than 56 bytes, use single byte prefix (0xc0 to 0xf7)
+		return append(encodeLength(listSize, 0xc0), buffer.Bytes()...)
+	} else {
+		// List length is 56 bytes or more, use a multi-byte prefix (0xf8 to 0xff)
+		encodedLength := encodeLength(listSize, 0x80) // encode the length as a binary
+		prefixLength := len(encodedLength)            // number of bytes to store the length
+		prefix := []byte{0xf7 + byte(prefixLength)}   // RLP large list prefix
+		return append(append(prefix, encodedLength...), buffer.Bytes()...)
+	}
 }
 
 func encodeStringSlice(data interface{}) []byte {
