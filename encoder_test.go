@@ -49,4 +49,6 @@ func TestReflectDT(t *testing.T) {
 	res := enc.EncodeRLP(data)
 	fmt.Printf("res is %v\n", res)
 	assert.Equal(t, res, exp)
+
+	// the prefix exceeds 0xf8 - 0xff limit if the data set is large
 }
