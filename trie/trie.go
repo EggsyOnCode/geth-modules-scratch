@@ -20,10 +20,18 @@ func (n *Node) Insert(t *Trie, data rune) {
 }
 
 func (n *Node) InsertString(t *Trie, s string) {
-	for _, c := range s {
-		n.Insert(t, c)
+	// Base case: if the string is empty, stop the recursion
+	if len(s) == 0 {
+		return
 	}
+
+	// Insert the first character of the string
+	n.Insert(t, rune(s[0]))
+
+	// Recursively insert the remaining substring
+	t.CurrentNode.InsertString(t, s[1:])
 }
+
 
 type Trie struct {
 	RootNode    *Node
@@ -60,7 +68,7 @@ func (t *Trie) LoadString(s string) {
 	// 3. if the string is already loaded then return
 
 	nodes := t.FindMatch(s)
-	if len(nodes) == len(s)+1 {
+	if len(nodes) == len(s) {
 		return
 	} else if len(nodes) == 0 {
 		t.RootNode.InsertString(t, s)
@@ -94,10 +102,16 @@ func (t *Trie) findMatch(n *Node, s string, pathway []*Node) []*Node {
 			pathway = append(pathway, child)
 
 			// Recursively call the function with the rest of the string
-			return t.findMatch(child, s[1:], pathway)
+			result := t.findMatch(child, s[1:], pathway)
+
+			// If the result is non-nil, return it (indicating a successful match)
+			if result != nil {
+				return result
+			}
 		}
 	}
 
-	// If no match is found, return nil (or pathway depending on use case)
-	return nil
+	// If no match is found, return the pathway up to the last matched node
+	return pathway
 }
+
