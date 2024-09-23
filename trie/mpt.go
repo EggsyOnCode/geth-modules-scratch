@@ -117,9 +117,10 @@ func (ln *leafNode) Hash() []byte {
 	return keccak256.New().Hash(encoded)
 }
 
-func NewTrie() *trie {
+func NewTrie(db *leveldb.DB) *trie {
 	newT := &trie{
 		nodes: map[string]node{},
+		dB:    db,
 	}
 
 	// by default, the root node is a branch node
@@ -173,12 +174,17 @@ func (t *trie) decode(nibbles []byte, encodedAccount []byte) {
 
 // traverses and updates the trie
 // TODO: persist nodes to DB (go routines)
+// traversal assumes that the node hashes have been loaded from DB into RAM
+// and the trie is being traversed in-memory
+// but in Ethereum, they are being fetched from the DB
+// TODO: fetch node values from DB and decode them to be used here
 func (t *trie) traverse(n []byte, nibbles []byte, encodedAccount []byte, temp []any) {
 	currNibble := nibbles[0]
 	switch node := t.nodes[string(n)].(type) {
 	case *branchNode:
 		if node.children[currNibble] != nil {
 			// If the child exists, we traverse it
+
 			// Add common prefix to temp
 			tempStruct := struct {
 				nodeHash []byte
@@ -316,4 +322,19 @@ func preProcess(keyHash []byte) []byte {
 func hash(data []byte) []byte {
 	enc, _ := rlp.EncodeToBytes(data)
 	return keccak256.New().Hash(enc)
+}
+
+// DB opeartions on the trie
+func (t *trie) Get(key []byte) []byte {
+	if val, err := t.dB.Get(key, nil); err != nil {
+		panic("mpt: failed to get the value from the DB")
+	} else {
+		return val
+	}
+}
+
+func (t *trie) Set(key []byte, value []byte) {
+	if err := t.dB.Put(key, value, nil); err != nil {
+		panic("mpt: failed to set the value in the DB")
+	}
 }
