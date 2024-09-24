@@ -187,6 +187,7 @@ func (t *trie) traverse(n []byte, nibbles []byte, encodedAccount []byte, temp []
 
 	if tempNode == nil || (tempNode.Hash() != nil) {
 		// fetch from DB and deserialize
+		tempNode = *t.FetchNodeFromDB(n)
 	}
 
 	switch node := tempNode.(type) {
@@ -416,4 +417,76 @@ func (t *trie) PersistNodesToDB(nodes []iNode) {
 			panic("mpt: failed to persist the node to the DB")
 		}
 	}
+}
+
+// n being its hash
+func (t *trie) FetchNodeFromDB(n []byte) *iNode {
+	if val, err := t.dB.Get(n, nil); err != nil {
+		panic("mpt: failed to fetch the node from the DB")
+	} else {
+		// decode the node
+		resNode, err := decodeNode(n, val)
+		if err != nil {
+			panic("mpt: failed to decode the node")
+		}
+		// return the node
+		return &resNode
+	}
+}
+
+// decode func
+
+// decodeNode parses the RLP encoding of a trie node.
+func decodeNode(hash []byte, buf []byte) (iNode, error) {
+	if len(buf) == 0 {
+		return nil, fmt.Errorf("empty node")
+	}
+
+	// Split the RLP encoded list into elements
+	elems, _, err := rlp.SplitList(buf)
+	if err != nil {
+		return nil, fmt.Errorf("decode error: %v", err)
+	}
+
+	// Count the number of values in the RLP list
+	switch count, _ := rlp.CountValues(elems); count {
+	case 2:
+		return decodeLeafNode(elems)
+	case 3:
+		return decodeExtensionNode(elems)
+	case 17:
+		return decodeBranchNode(elems)
+	default:
+		return nil, fmt.Errorf("invalid number of list elements: %v", count)
+	}
+}
+
+// Decode a leafNode from its RLP encoded elements
+func decodeLeafNode(buf []byte) (iNode, error) {
+	var lN leafNode
+	if err := rlp.DecodeBytes(buf, &lN); err != nil {
+		return nil, fmt.Errorf("failed to decode tempBool: %v", err)
+	}
+
+	return &lN, nil
+}
+
+// Decode an extensionNode from its RLP encoded elements
+func decodeExtensionNode(buf []byte) (iNode, error) {
+	var extNode extensionNode
+	if err := rlp.DecodeBytes(buf, &extNode); err != nil {
+		return nil, fmt.Errorf("failed to decode tempBool: %v", err)
+	}
+
+	return &extNode, nil
+}
+
+// Decode a branchNode from its RLP encoded elements
+func decodeBranchNode(buf []byte) (iNode, error) {
+	var bN branchNode
+	if err := rlp.DecodeBytes(buf, &bN); err != nil {
+		return nil, fmt.Errorf("failed to decode tempBool: %v", err)
+	}
+
+	return &bN, nil
 }
