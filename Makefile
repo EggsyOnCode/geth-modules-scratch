@@ -1,8 +1,8 @@
 build:
-	go build -o ./bin/go-audio-codec
+	go build -o ./bin/geth-modules-sratch
 
 run: build
-	./bin/go-audio-codec
+	./bin/geth-modules-sratch
 
 test: 
 	go test -v ./...

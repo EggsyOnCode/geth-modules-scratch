@@ -1,4 +1,4 @@
-module go-audio-codec
+module geth-modules-scratch
 
 go 1.22.2
 
