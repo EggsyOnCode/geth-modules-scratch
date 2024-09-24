@@ -465,7 +465,7 @@ func decodeNode(hash []byte, buf []byte) (iNode, error) {
 func decodeLeafNode(buf []byte) (iNode, error) {
 	var lN leafNode
 	if err := rlp.DecodeBytes(buf, &lN); err != nil {
-		return nil, fmt.Errorf("failed to decode tempBool: %v", err)
+		return nil, fmt.Errorf("failed to decode leafNode: %v", err)
 	}
 
 	return &lN, nil
@@ -475,7 +475,7 @@ func decodeLeafNode(buf []byte) (iNode, error) {
 func decodeExtensionNode(buf []byte) (iNode, error) {
 	var extNode extensionNode
 	if err := rlp.DecodeBytes(buf, &extNode); err != nil {
-		return nil, fmt.Errorf("failed to decode tempBool: %v", err)
+		return nil, fmt.Errorf("failed to decode extensionNode: %v", err)
 	}
 
 	return &extNode, nil
@@ -485,7 +485,7 @@ func decodeExtensionNode(buf []byte) (iNode, error) {
 func decodeBranchNode(buf []byte) (iNode, error) {
 	var bN branchNode
 	if err := rlp.DecodeBytes(buf, &bN); err != nil {
-		return nil, fmt.Errorf("failed to decode tempBool: %v", err)
+		return nil, fmt.Errorf("failed to decode branchNode: %v", err)
 	}
 
 	return &bN, nil
