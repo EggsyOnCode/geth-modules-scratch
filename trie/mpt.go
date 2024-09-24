@@ -3,6 +3,7 @@ package trie
 import (
 	"bytes"
 	"crypto/ecdsa"
+	"fmt"
 
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/syndtr/goleveldb/leveldb"
@@ -32,7 +33,7 @@ import (
 // revised criterion for branch node:-  common prefix & NO commonlaity in
 // key-end of LN & divergence count of 1 nibble
 
-type node interface {
+type iNode interface {
 	Hash() []byte
 	Encode() ([]byte, error)
 }
@@ -46,12 +47,13 @@ type (
 	}
 	extensionNode struct {
 		// the common prefix
-		prefix       int
+		// prefix       int
+		tempBool     bool
 		sharedNibble []byte
 		nextNode     []byte
 	}
 	leafNode struct {
-		prefix int
+		// prefix int
 		keyEnd []byte
 		value  []byte
 	}
@@ -61,7 +63,7 @@ type (
 	}
 	trie struct {
 		// hash -> node
-		nodes    map[string]node
+		nodes    map[string]iNode
 		rootHash []byte
 		dB       *leveldb.DB
 	}
@@ -85,7 +87,8 @@ func (bn *branchNode) Hash() []byte {
 
 func NewExtNode() *extensionNode {
 	return &extensionNode{
-		prefix:       -1, // -1 -> uninit
+		// prefix:       -1, // -1 -> uninit
+		tempBool:     true,
 		sharedNibble: nil,
 		nextNode:     nil,
 	}
@@ -102,7 +105,7 @@ func (en *extensionNode) Hash() []byte {
 
 func NewLeafNode() *leafNode {
 	return &leafNode{
-		prefix: -1, // -1 -> uninit
+		// prefix: -1, // -1 -> uninit
 		keyEnd: nil,
 		value:  nil,
 	}
@@ -119,7 +122,7 @@ func (ln *leafNode) Hash() []byte {
 
 func NewTrie(db *leveldb.DB) *trie {
 	newT := &trie{
-		nodes: map[string]node{},
+		nodes: map[string]iNode{},
 		dB:    db,
 	}
 
@@ -180,7 +183,13 @@ func (t *trie) decode(nibbles []byte, encodedAccount []byte) {
 // TODO: fetch node values from DB and decode them to be used here
 func (t *trie) traverse(n []byte, nibbles []byte, encodedAccount []byte, temp []any) {
 	currNibble := nibbles[0]
-	switch node := t.nodes[string(n)].(type) {
+	tempNode := t.nodes[string(n)]
+
+	if tempNode == nil || (tempNode.Hash() != nil) {
+		// fetch from DB and deserialize
+	}
+
+	switch node := tempNode.(type) {
 	case *branchNode:
 		if node.children[currNibble] != nil {
 			// If the child exists, we traverse it
@@ -202,14 +211,24 @@ func (t *trie) traverse(n []byte, nibbles []byte, encodedAccount []byte, temp []
 			ln := NewLeafNode()
 			ln.value = encodedAccount
 			ln.keyEnd = nibbles[1:] // Remaining nibbles for the leaf
-			ln.prefix = len(nibbles) - 1
+			// ln.prefix = len(nibbles) - 1
 
 			// Add pointer to the new leaf node in the branch node
 			node.children[currNibble] = ln.Hash()
 
 			// Calculate and persist the branch node hash
-			// (Assuming you have a method for hashing)
 			t.nodes[string(node.Hash())] = node // Persist the updated branch node
+
+			branchNodes := []*branchNode{node}
+			nodesFromBranch := branchNodesToInterface(branchNodes)
+
+			// Convert leafNode slice to Node slice
+			leafNodes := []*leafNode{ln}
+			nodesFromLeaf := leafNodesToInterface(leafNodes)
+
+			allNodes := append(nodesFromBranch, nodesFromLeaf...)
+
+			go t.PersistNodesToDB(allNodes)
 		}
 	case *extensionNode:
 		// Check if the shared nibble matches
@@ -221,7 +240,7 @@ func (t *trie) traverse(n []byte, nibbles []byte, encodedAccount []byte, temp []
 			branch := NewBranchNode()
 			// Create the new extension node with the shared prefix
 			newExtNode := NewExtNode()
-			newExtNode.prefix = node.prefix
+			// newExtNode.prefix = node.prefix
 			newExtNode.sharedNibble = node.sharedNibble
 			newExtNode.nextNode = node.nextNode
 
@@ -232,13 +251,28 @@ func (t *trie) traverse(n []byte, nibbles []byte, encodedAccount []byte, temp []
 			ln := NewLeafNode()
 			ln.value = encodedAccount
 			ln.keyEnd = nibbles[1:]
-			ln.prefix = len(nibbles) - 1
+			// ln.prefix = len(nibbles) - 1
 			branch.children[nibbles[1]] = ln.Hash()
 
 			// Persist the new nodes
 			t.nodes[string(branch.Hash())] = branch
 			t.nodes[string(newExtNode.Hash())] = newExtNode
 			t.nodes[string(ln.Hash())] = ln
+
+			branchNodes := []*branchNode{branch}
+			nodesFromBranch := branchNodesToInterface(branchNodes)
+
+			extNodes := []*extensionNode{newExtNode}
+			nodesFromExt := extensionNodesToInterface(extNodes)
+
+			leafNodes := []*leafNode{ln}
+			nodesFromLeaf := leafNodesToInterface(leafNodes)
+
+			allNodes := append(nodesFromBranch, nodesFromExt...) // Combine branch and extension nodes
+			allNodes = append(allNodes, nodesFromLeaf...)        // Finally add leaf nodes
+
+			go t.PersistNodesToDB(allNodes)
+
 		}
 	case *leafNode:
 		// If we encounter a leaf node
@@ -256,18 +290,53 @@ func (t *trie) traverse(n []byte, nibbles []byte, encodedAccount []byte, temp []
 			ln := NewLeafNode()
 			ln.value = encodedAccount
 			ln.keyEnd = nibbles[1:]
-			ln.prefix = len(nibbles) - 1
+			// ln.prefix = len(nibbles) - 1
 			branch.children[currNibble] = ln.Hash()
 
 			// Persist the new branch and updated leaf node
 			t.nodes[string(branch.Hash())] = branch
 			t.nodes[string(ln.Hash())] = ln
+
+			branchNodes := []*branchNode{branch}
+			nodesFromBranch := branchNodesToInterface(branchNodes)
+
+			leafNodes := []*leafNode{ln}
+			nodesFromLeaf := leafNodesToInterface(leafNodes)
+
+			allNodes := append(nodesFromBranch, nodesFromLeaf...)
+			go t.PersistNodesToDB(allNodes)
 		}
 	}
 
 	// Calculate and persist the root hash
 	go t.UpdateRootHash()
 
+}
+
+func branchNodesToInterface(branchNodes []*branchNode) []iNode {
+	nodes := make([]iNode, len(branchNodes))
+	for i, bn := range branchNodes {
+		nodes[i] = bn // bn is a pointer to branchNode
+	}
+	return nodes
+}
+
+// Convert a slice of leafNode pointers to a slice of iNode interface
+func leafNodesToInterface(leafNodes []*leafNode) []iNode {
+	nodes := make([]iNode, len(leafNodes))
+	for i, ln := range leafNodes {
+		nodes[i] = ln // ln is a pointer to leafNode
+	}
+	return nodes
+}
+
+// Convert a slice of extensionNode pointers to a slice of iNode interface
+func extensionNodesToInterface(extNodes []*extensionNode) []iNode {
+	nodes := make([]iNode, len(extNodes))
+	for i, en := range extNodes {
+		nodes[i] = en // en is a pointer to extensionNode
+	}
+	return nodes
 }
 
 func (t *trie) UpdateRootHash() {
@@ -280,7 +349,7 @@ func (t *trie) UpdateRootHash() {
 	t.rootHash = t.calculateMerkleRoot(rootNode)
 }
 
-func (t *trie) calculateMerkleRoot(node node) []byte {
+func (t *trie) calculateMerkleRoot(node iNode) []byte {
 	switch n := node.(type) {
 	case *leafNode:
 		// If it's a leaf node, return its hash
@@ -336,5 +405,15 @@ func (t *trie) Get(key []byte) []byte {
 func (t *trie) Set(key []byte, value []byte) {
 	if err := t.dB.Put(key, value, nil); err != nil {
 		panic("mpt: failed to set the value in the DB")
+	}
+}
+
+func (t *trie) PersistNodesToDB(nodes []iNode) {
+	for _, n := range nodes {
+		enc, _ := n.Encode()
+		hash := n.Hash()
+		if err := t.dB.Put(hash, enc, nil); err != nil {
+			panic("mpt: failed to persist the node to the DB")
+		}
 	}
 }
